@@ -1,50 +1,110 @@
-var margin = {top: 10, right: 20, bottom: 30, left: 50},
-    width = 500 - margin.left - margin.right,
-    height = 420 - margin.top - margin.bottom;
+// The svg
+const svg = d3.select("svg"),
+    width = +svg.attr("width"),
+    height = +svg.attr("height");
 
-// append the svg object to the body of the page
-var svg = d3.select("#my_dataviz")
-    .append("svg")
-    .attr("width", width + margin.left + margin.right)
-    .attr("height", height + margin.top + margin.bottom)
-    .append("g")
-    .attr("transform",
-        "translate(" + margin.left + "," + margin.top + ")");
+// Map and projection
+const projection = d3.geoMercator()
+    .center([0,20])                // GPS of location to zoom on
+    .scale(99)                       // This is like the zoom
+    .translate([ width/2, height/2 ])
 
-//Read the data
-d3.csv("data.csv", function(data) {
+Promise.all([
+    d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/world.geojson"),
+    d3.csv("https://raw.githubusercontent.com/Johncates/ProjProposal/master/data/data.csv")
+]).then(function (initialize) {
 
-    // Add X axis
-    var x = d3.scaleLinear()
-        .domain([0, 10000])
-        .range([ 0, width ]);
-    svg.append("g")
-        .attr("transform", "translate(0," + height + ")")
-        .call(d3.axisBottom(x));
+    let dataGeo = initialize[0]
+    let data = initialize[1]
 
-    // Add Y axis
-    var y = d3.scaleLinear()
-        .domain([35, 90])
-        .range([ height, 0]);
-    svg.append("g")
-        .call(d3.axisLeft(y));
+    // Create a color scale
+    const color = d3.scaleOrdinal()
+        .domain(data.map(d => d.homecontinent))
+        .range(d3.schemePaired);
 
     // Add a scale for bubble size
-    var z = d3.scaleLinear()
-        .domain([200000, 1310000000])
-        .range([ 1, 40]);
+    const valueExtent = d3.extent(data, d => +d.Numberofspeakers)
+    const size = d3.scaleSqrt()
+        .domain(valueExtent)  // What's in the data
+        .range([ 1, 50])  // Size in pixel
 
-    // Add dots
-    svg.append('g')
-        .selectAll("dot")
-        .data(data)
-        .enter()
-        .append("circle")
-        .attr("cx", function (d) { return x(d.gdpPercap); } )
-        .attr("cy", function (d) { return y(d.lifeExp); } )
-        .attr("r", function (d) { return z(d.pop); } )
-        .style("fill", "#69b3a2")
-        .style("opacity", "0.7")
+    // Draw the map
+    svg.append("g")
+        .selectAll("path")
+        .data(dataGeo.features)
+        .join("path")
+        .attr("fill", "#b8b8b8")
+        .attr("d", d3.geoPath()
+            .projection(projection)
+        )
+        .style("stroke", "none")
+        .style("opacity", .3)
+
+    // Add circles:
+    svg
+        .selectAll("myCircles")
+        .data(data.sort((a,b) => +b.Numberofspeakers - +a.Numberofspeakers).filter((d,i) => i<10000000))
+        .join("circle")
+        .attr("cx", d => projection([+d.Longitude, +d.Latitude])[0])
+        .attr("cy", d => projection([+d.Longitude, +d.Latitude])[1])
+        .attr("r", d => size(+d.Numberofspeakers))
+        .style("fill", d => color(d.Degreeofendangerment))
+        .attr("stroke", d=> {if (d.Numberofspeakers>2) {return "black"} else {return "none"}  })
+        .attr("stroke-width", 1)
+        .attr("fill-opacity", .4)
+
+
+
+    // Add title and explanation
+    svg
+        .append("text")
+        .attr("text-anchor", "end")
+        .style("fill", "black")
+        .attr("x", width - 10)
+        .attr("y", height - 30)
+        .attr("width", 90)
+        .html("Languages and their Endangerment Status")
+        .style("font-size", 14)
+
+
+    // --------------- //
+    // ADD LEGEND //
+    // --------------- //
+
+    // Add legend: circles
+    const valuesToShow = [100,4000,15000]
+    const xCircle = 40
+    const xLabel = 90
+    svg
+        .selectAll("legend")
+        .data(valuesToShow)
+        .join("circle")
+        .attr("cx", xCircle)
+        .attr("cy", d => height - size(d))
+        .attr("r", d => size(d))
+        .style("fill", "none")
         .attr("stroke", "black")
 
+    // Add legend: segments
+    svg
+        .selectAll("legend")
+        .data(valuesToShow)
+        .join("line")
+        .attr('x1', d => xCircle + size(d))
+        .attr('x2', xLabel)
+        .attr('y1', d => height - size(d))
+        .attr('y2', d => height - size(d))
+        .attr('stroke', 'black')
+        .style('stroke-dasharray', ('2,2'))
+
+    // Add legend: labels
+    svg
+        .selectAll("legend")
+        .data(valuesToShow)
+        .join("text")
+        .attr('x', xLabel)
+        .attr('y', d => height - size(d))
+        .text(d => d)
+        .style("font-size", 10)
+        .attr('alignment-baseline', 'middle')
 })
